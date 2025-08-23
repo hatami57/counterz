@@ -1,0 +1,27 @@
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <script src="/webui.js"></script>
+    </head>
+    <body>
+        <h1 id="count">0</h1>
+
+        <script>
+			let count = 0;
+
+			function GetCount() {
+				return count;
+			}
+
+			function SetCount(number) {
+				document.getElementById("count").innerHTML = number;
+				count = number;
+			}
+
+            function Increment(number = 1) {
+                count += number
+                document.getElementById("count").innerHTML = count;
+            }
+		</script>
+    </body>
+</html>
