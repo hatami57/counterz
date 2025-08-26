@@ -4,10 +4,14 @@ const html = @embedFile("index.html");
 const print = std.debug.print;
 
 const SocketHandler = struct {
+    allocator: std.mem.Allocator,
     socket_fd: std.posix.fd_t,
     win: *webui,
+    counter: i32,
 
     fn run(self: *SocketHandler) void {
+        self.setCounter();
+
         while (true) {
             const client_fd = std.posix.accept(self.socket_fd, null, null, 0) catch |err| {
                 print("Error accepting connection: {}\n", .{err});
@@ -26,19 +30,29 @@ const SocketHandler = struct {
                 print("Received message: {s}\n", .{msg});
 
                 if (std.mem.eql(u8, msg, "inc")) {
-                    self.win.run("Increment();");
+                    self.counter += 1;
+                    self.setCounter();
                 }
             }
         }
     }
+
+    fn setCounter(self: *SocketHandler) void {
+        const set_counter_js = std.fmt.allocPrint(self.allocator, "SetCounter({d});", .{self.counter});
+        defer self.allocator.free(set_counter_js);
+
+        self.win.run(set_counter_js);
+    }
 };
 
 pub fn main() !void {
-    // var gpa = std.heap.DebugAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // var allocator = gpa.allocator();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    var counter: i32 = 0;
+    var title: []u8 = "";
 
-    const socket_path = "/tmp/zig_counter.sock";
+    const socket_path = "/tmp/counterz.sock";
     _ = std.fs.deleteFileAbsolute(socket_path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
@@ -51,14 +65,19 @@ pub fn main() !void {
     try std.posix.bind(sock_fd, &addr.any, addr.getOsSockLen());
     try std.posix.listen(sock_fd, 128);
 
-    print("Listening on Unix socket {s}\n", .{socket_path});
+    print("Listening on Posix socket {s}\n", .{socket_path});
 
     var win = webui.newWindow();
+    win.setSize(100, 100);
+    // win.setFrameless(true);
+    win.setHighContrast(true);
     try win.show(html);
 
     var socket_handler = SocketHandler{
+        .allocator = allocator,
         .socket_fd = sock_fd,
         .win = &win,
+        .counter = counter,
     };
 
     const thread = try std.Thread.spawn(.{}, SocketHandler.run, .{&socket_handler});
