@@ -56,11 +56,8 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var config = Config{ .title = &[_]u8{}, .counter = 0 };
     const filename = "config.txt";
-    var file: std.fs.File = undefined;
 
-    try ensureConfigExists(filename);
-
-    file = try std.fs.cwd().openFile(filename, .{ .mode = .read_write });
+    var file = try ensureConfigExists(filename);
     defer file.close();
 
     try readConfig(allocator, &file, &config);
@@ -103,27 +100,30 @@ pub fn main() !void {
     webui.clean();
 }
 
-fn ensureConfigExists(filename: []const u8) !void {
+fn ensureConfigExists(filename: []const u8) !std.fs.File {
     const cwd = std.fs.cwd();
-    const file = cwd.openFile(filename, .{}) catch |err| switch (err) {
+    const file = cwd.openFile(filename, .{ .mode = .read_write }) catch |err| switch (err) {
         error.FileNotFound => {
-            try writeDefaultConfig(filename);
-            return;
+            return try writeDefaultConfig(filename);
         },
         else => return err,
     };
 
     const file_info = try file.stat();
     if (file_info.size == 0) {
-        try writeDefaultConfig(filename);
+        file.close();
+        return try writeDefaultConfig(filename);
     }
+
+    return file;
 }
 
-fn writeDefaultConfig(filename: []const u8) !void {
+fn writeDefaultConfig(filename: []const u8) !std.fs.File {
     var file = try std.fs.cwd().createFile(filename, .{});
-    defer file.close();
 
     try file.writeAll("Title: \nCounter: 0000");
+
+    return file;
 }
 
 fn readConfig(allocator: std.mem.Allocator, file: *std.fs.File, config: *Config) !void {
@@ -161,7 +161,6 @@ fn readConfig(allocator: std.mem.Allocator, file: *std.fs.File, config: *Config)
 
     const counter_value = config_text[counter_value_start..counter_value_end];
     const trimmed_counter_value = std.mem.trim(u8, counter_value, " \r\n\r");
-    print("counter value: {s}\n", .{trimmed_counter_value});
 
     config.counter = try std.fmt.parseInt(i32, trimmed_counter_value, 10);
 }
