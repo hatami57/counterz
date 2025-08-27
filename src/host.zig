@@ -45,12 +45,28 @@ const SocketHandler = struct {
     }
 };
 
+const Config = struct {
+    title: []u8,
+    counter: i32,
+};
+
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var counter: i32 = 0;
-    var title: []u8 = "";
+    var config = Config{ .title = "", .counter = 0 };
+    const filename = "config.txt";
+    var file: std.fs.File = undefined;
+
+    try ensureConfigExists(filename);
+
+    file = try std.fs.cwd().openFile(filename, .{ .mode = .read_write });
+    defer file.close();
+
+    try readConfig(allocator, &file, &config);
+    defer allocator.free(config.title);
+
+    print("Config => Title: {s}, Counter: {d}\n", .{ config.title, config.counter });
 
     const socket_path = "/tmp/counterz.sock";
     _ = std.fs.deleteFileAbsolute(socket_path) catch |err| switch (err) {
@@ -77,7 +93,7 @@ pub fn main() !void {
         .allocator = allocator,
         .socket_fd = sock_fd,
         .win = &win,
-        .counter = counter,
+        .counter = config.counter,
     };
 
     const thread = try std.Thread.spawn(.{}, SocketHandler.run, .{&socket_handler});
@@ -85,4 +101,40 @@ pub fn main() !void {
 
     webui.wait();
     webui.clean();
+}
+
+fn ensureConfigExists(filename: []const u8) !void {
+    const file_info = try std.fs.cwd().stat();
+    if (file_info.size == 0) {
+        var file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
+        defer file.close();
+
+        try file.writer().print("Title: \nCounter: 0000", .{});
+    }
+}
+
+fn readConfig(allocator: std.mem.Allocator, file: *std.fs.File, config: *Config) !void {
+    var buf: [1024]u8 = undefined;
+
+    try file.seekTo(0);
+
+    const bytes_count = try file.readAll(&buf);
+    var config_text = buf[0..bytes_count];
+    const title_index = std.mem.indexOf(u8, config_text, "Title:") orelse {
+        return error.DecodeError;
+    };
+    const title_end = std.mem.indexOf(u8, config_text, "\n") orelse {
+        return error.DecodeError;
+    };
+    const value_index = std.mem.indexOf(u8, config_text, "Counter:") orelse {
+        return error.DecodeError;
+    };
+
+    allocator.free(config.title);
+    config.title = try allocator.alloc(u8, title_end - title_index + 1);
+    try file.seekTo(title_index);
+    config.title = std.mem.trim(u8, config.title, " \r\n\t");
+
+    const counter_str = std.mem.trim(u8, config_text[value_index .. value_index + 4], " \r\n\t");
+    config.counter = try std.fmt.parseInt(i32, counter_str, 10);
 }
