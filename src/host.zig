@@ -4,14 +4,11 @@ const html = @embedFile("index.html");
 const print = std.debug.print;
 
 const SocketHandler = struct {
-    allocator: std.mem.Allocator,
     socket_fd: std.posix.fd_t,
-    win: *webui,
-    counter: i32,
+    page_controller: *PageController,
+    count: i32,
 
     fn run(self: *SocketHandler) !void {
-        try self.setCounter();
-
         while (true) {
             const client_fd = std.posix.accept(self.socket_fd, null, null, 0) catch |err| {
                 print("Error accepting connection: {}\n", .{err});
@@ -30,18 +27,30 @@ const SocketHandler = struct {
                 print("Received message: {s}\n", .{msg});
 
                 if (std.mem.eql(u8, msg, "inc")) {
-                    self.counter += 1;
-                    try self.setCounter();
+                    self.count += 1;
+                    try self.page_controller.setCount(self.count);
                 }
             }
         }
     }
+};
 
-    fn setCounter(self: *SocketHandler) !void {
-        const set_counter_js = try std.fmt.allocPrintZ(self.allocator, "SetCounter({d});", .{self.counter});
-        defer self.allocator.free(set_counter_js);
+const PageController = struct {
+    allocator: std.mem.Allocator,
+    win: *webui,
 
-        self.win.run(set_counter_js);
+    fn setCount(self: *PageController, count: i32) !void {
+        const set_count_js = try std.fmt.allocPrintZ(self.allocator, "SetCount({d});", .{count});
+        defer self.allocator.free(set_count_js);
+
+        self.win.run(set_count_js);
+    }
+
+    fn setTitle(self: *PageController, title: []const u8) !void {
+        const set_title_js = try std.fmt.allocPrintZ(self.allocator, "SetTitle('{s}');", .{title});
+        defer self.allocator.free(set_title_js);
+
+        self.win.run(set_title_js);
     }
 };
 
@@ -86,11 +95,18 @@ pub fn main() !void {
     win.setHighContrast(true);
     try win.show(html);
 
-    var socket_handler = SocketHandler{
+    var page_controller = PageController{
         .allocator = allocator,
-        .socket_fd = sock_fd,
         .win = &win,
-        .counter = config.counter,
+    };
+
+    try page_controller.setTitle(config.title);
+    try page_controller.setCount(config.counter);
+
+    var socket_handler = SocketHandler{
+        .socket_fd = sock_fd,
+        .page_controller = &page_controller,
+        .count = config.counter,
     };
 
     const thread = try std.Thread.spawn(.{}, SocketHandler.run, .{&socket_handler});
