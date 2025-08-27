@@ -5,6 +5,7 @@
     </head>
     <body>
         <h1 id="count">0</h1>
+        <p id="title"></p>
 
         <script>
 			let count = 0;
@@ -18,9 +19,8 @@
 				count = number;
 			}
 
-            function Increment(number = 1) {
-                count += number
-                document.getElementById("count").innerHTML = count;
+            function SetTitle(title = '') {
+                document.getElementById("title").innerHTML = title;
             }
 		</script>
     </body>
