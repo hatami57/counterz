@@ -30,7 +30,6 @@ const SocketHandler = struct {
 
                 if (std.mem.eql(u8, msg, "inc")) {
                     try self.config.inc();
-                    try self.config.writeCount();
                     try self.page_controller.setCount(self.config.count);
                 }
             }
@@ -67,6 +66,7 @@ const Config = struct {
     count: u32,
     count_str: [5]u8,
     count_position_in_file: u64,
+    logger: CounterLog,
 
     fn init(allocator: std.mem.Allocator) !Config {
         var config = Config{
@@ -76,6 +76,7 @@ const Config = struct {
             .count = 0,
             .count_str = [_]u8{ ' ', '0', '0', '0', '0' },
             .count_position_in_file = 0,
+            .logger = try CounterLog.init(allocator),
         };
 
         try config.ensureExists();
@@ -125,6 +126,8 @@ const Config = struct {
         self.count += 1;
         _ = try std.fmt.bufPrint(&self.count_str, " {:0>4}", .{self.count});
         print("new count: {d}, {s}\n", .{ self.count, self.count_str });
+        try self.writeCount();
+        try self.logger.write("INC", 1, self.count);
     }
 
     fn writeCount(self: *Config) !void {
@@ -173,6 +176,45 @@ const Config = struct {
 
             self.count = try std.fmt.parseInt(u32, trimmed_count_value, 10);
             self.count_position_in_file = count_value_start;
+        }
+    }
+};
+
+const CounterLog = struct {
+    const filename = "log.txt";
+
+    allocator: std.mem.Allocator,
+    file: ?std.fs.File,
+
+    fn init(allocator: std.mem.Allocator) !CounterLog {
+        const cwd = std.fs.cwd();
+        var log = CounterLog{
+            .allocator = allocator,
+            .file = null,
+        };
+
+        log.file = cwd.openFile(filename, .{ .mode = .read_write }) catch |err| switch (err) {
+            error.FileNotFound => try cwd.createFile(filename, .{ .read = true }),
+            else => return err,
+        };
+
+        try log.file.?.seekFromEnd(0);
+
+        return log;
+    }
+
+    fn deinit(self: *CounterLog) void {
+        if (self.file) |file| {
+            file.close();
+        }
+    }
+
+    fn write(self: *CounterLog, cmd: []const u8, count: u32, totalCount: u32) !void {
+        if (self.file) |file| {
+            const timestamp = std.time.timestamp();
+            const log_text = try std.fmt.allocPrint(self.allocator, "{d}\t{s}\t{d}\t{d}\n", .{ timestamp, cmd, count, totalCount });
+            try file.writeAll(log_text);
+            self.allocator.free(log_text);
         }
     }
 };
