@@ -5,13 +5,17 @@ const font_dseg7 = @embedFile("html/DSEG7.ttf");
 const font_amiri = @embedFile("html/AmiriQuran.ttf");
 const print = std.debug.print;
 
+const TITLE_LABEL = "Title:";
+const COUNT_LABEL = "Count:";
+
 const SocketHandler = struct {
     socket_fd: std.posix.fd_t,
-    page_controller: *PageController,
+    ui_controller: *UIController,
     config: *Config,
+    stop: *std.atomic.Value(bool),
 
     fn run(self: *SocketHandler) !void {
-        while (true) {
+        while (!self.stop.load(.seq_cst)) {
             const client_fd = std.posix.accept(self.socket_fd, null, null, 0) catch |err| {
                 print("Error accepting connection: {}\n", .{err});
                 continue;
@@ -30,29 +34,27 @@ const SocketHandler = struct {
 
                 if (std.mem.eql(u8, msg, "inc")) {
                     try self.config.inc();
-                    try self.page_controller.setCount(self.config.count);
+                    try self.ui_controller.setCount(self.config.count);
                 }
             }
         }
     }
 };
 
-const PageController = struct {
+const UIController = struct {
     allocator: std.mem.Allocator,
-    win: *webui,
+    window: *webui,
 
-    fn setCount(self: *PageController, count: u32) !void {
-        const set_count_js = try std.fmt.allocPrintZ(self.allocator, "SetCount({d});", .{count});
-        defer self.allocator.free(set_count_js);
-
-        self.win.run(set_count_js);
+    fn setCount(self: *UIController, count: u32) !void {
+        var buf: [64]u8 = undefined;
+        const set_count_js = try std.fmt.bufPrintZ(&buf, "SetCount({d});", .{count});
+        self.window.run(set_count_js);
     }
 
-    fn setTitle(self: *PageController, title: []const u8) !void {
-        const set_title_js = try std.fmt.allocPrintZ(self.allocator, "SetTitle('{s}');", .{title});
-        defer self.allocator.free(set_title_js);
-
-        self.win.run(set_title_js);
+    fn setTitle(self: *UIController, title: []const u8) !void {
+        var buf: [1024]u8 = undefined;
+        const set_title_js = try std.fmt.bufPrintZ(&buf, "SetTitle('{s}');", .{title});
+        self.window.run(set_title_js);
     }
 };
 
@@ -78,6 +80,7 @@ const Config = struct {
             .count_position_in_file = 0,
             .logger = try CounterLog.init(allocator),
         };
+        errdefer config.deinit();
 
         try config.ensureExists();
         try config.readConfig();
@@ -92,6 +95,7 @@ const Config = struct {
         if (self.title) |title| {
             self.allocator.free(title);
         }
+        self.logger.deinit();
     }
 
     fn ensureExists(self: *Config) !void {
@@ -117,7 +121,7 @@ const Config = struct {
     fn writeDefault(self: *Config) !void {
         var file = try std.fs.cwd().createFile(filename, .{ .read = true });
 
-        try file.writeAll("Title: Your First Counter\nCount: 0000");
+        try file.writeAll(TITLE_LABEL ++ " Your First Counter\n" ++ COUNT_LABEL ++ " 0000");
 
         self.file = file;
     }
@@ -125,7 +129,6 @@ const Config = struct {
     fn inc(self: *Config) !void {
         self.count += 1;
         _ = try std.fmt.bufPrint(&self.count_str, " {:0>4}", .{self.count});
-        print("new count: {d}, {s}\n", .{ self.count, self.count_str });
         try self.writeCount();
         try self.logger.write("INC", 1, self.count);
     }
@@ -146,9 +149,8 @@ const Config = struct {
             const bytes_read = try file.readAll(&buf);
             const config_text = buf[0..bytes_read];
 
-            const title_label = "Title:";
-            const title_start = std.mem.indexOf(u8, config_text, title_label) orelse return error.DecodeError;
-            const title_value_start = title_start + title_label.len;
+            const title_start = std.mem.indexOf(u8, config_text, TITLE_LABEL) orelse return error.DecodeError;
+            const title_value_start = title_start + TITLE_LABEL.len;
 
             const title_line_end = std.mem.indexOf(u8, config_text[title_value_start..], "\n") orelse return error.DecodeError;
             const title_value_end = title_value_start + title_line_end;
@@ -164,9 +166,8 @@ const Config = struct {
             self.title = try self.allocator.alloc(u8, trimmed_title_value.len);
             std.mem.copyForwards(u8, self.title.?, trimmed_title_value);
 
-            const count_label = "Count:";
-            const count_start = std.mem.indexOf(u8, config_text[title_value_end..], count_label) orelse return error.DecodeError;
-            const count_value_start = title_value_end + count_start + count_label.len;
+            const count_start = std.mem.indexOf(u8, config_text[title_value_end..], COUNT_LABEL) orelse return error.DecodeError;
+            const count_value_start = title_value_end + count_start + COUNT_LABEL.len;
 
             const count_line_end = std.mem.indexOf(u8, config_text[count_value_start..], "\n") orelse (config_text.len - count_value_start);
             const count_value_end = count_value_start + count_line_end;
@@ -212,9 +213,9 @@ const CounterLog = struct {
     fn write(self: *CounterLog, cmd: []const u8, count: u32, totalCount: u32) !void {
         if (self.file) |file| {
             const timestamp = std.time.timestamp();
-            const log_text = try std.fmt.allocPrint(self.allocator, "{d}\t{s}\t{d}\t{d}\n", .{ timestamp, cmd, count, totalCount });
+            var buf: [128]u8 = undefined;
+            const log_text = try std.fmt.bufPrint(&buf, "{d}\t{s}\t{d}\t{d}\n", .{ timestamp, cmd, count, totalCount });
             try file.writeAll(log_text);
-            self.allocator.free(log_text);
         }
     }
 };
@@ -225,8 +226,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var config = try Config.init(allocator);
     defer config.deinit();
+    var stop_flag = std.atomic.Value(bool).init(false);
 
-    print("Config => Title: {s}, Count: {d}\n", .{ config.title orelse "", config.count });
+    print("Config => {s} {s}, {s} {d}\n", .{ TITLE_LABEL, config.title orelse "", COUNT_LABEL, config.count });
 
     const socket_path = "/tmp/counterz.sock";
     _ = std.fs.deleteFileAbsolute(socket_path) catch |err| switch (err) {
@@ -250,25 +252,30 @@ pub fn main() !void {
     win.setFileHandler(htmlFileHandler);
     try win.show(html);
 
-    var page_controller = PageController{
+    var ui_controller = UIController{
         .allocator = allocator,
-        .win = &win,
+        .window = &win,
     };
 
-    try page_controller.setTitle(config.title orelse "");
-    try page_controller.setCount(config.count);
+    try ui_controller.setTitle(config.title orelse "");
+    try ui_controller.setCount(config.count);
 
     var socket_handler = SocketHandler{
         .socket_fd = sock_fd,
-        .page_controller = &page_controller,
+        .ui_controller = &ui_controller,
         .config = &config,
+        .stop = &stop_flag,
     };
 
     const thread = try std.Thread.spawn(.{}, SocketHandler.run, .{&socket_handler});
-    thread.detach();
 
     webui.wait();
     webui.clean();
+
+    stop_flag.store(true, .seq_cst);
+    std.posix.close(sock_fd);
+
+    thread.join();
 }
 
 fn htmlFileHandler(filename: []const u8) ?[]const u8 {
