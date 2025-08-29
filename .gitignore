@@ -1,3 +1,11 @@
 .zig-cache/
 zig-out/
 
+config.txt
+log.txt
+
+
+config.txt
+log.txt
+*/**/.DS_Store
+
