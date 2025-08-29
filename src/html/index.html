@@ -1,0 +1,42 @@
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <script src="/webui.js"></script>
+        <style>
+        @font-face {
+            font-family: '7Segment';
+            src: url('DSEG7.ttf') format('truetype');
+        }
+        @font-face {
+            font-family: 'Amiri';
+            src: url('AmiriQuran.ttf') format('truetype');
+        }
+
+
+        .counter {
+            font-family: '7Segment';
+            font-size: 1.5em;
+            color: green;
+        }
+        .title {
+            font-family: 'Amiri';
+            font-size: 0.7em;
+            color: blue;
+        }
+        </style>
+    </head>
+    <body dir="rtl">
+        <div id="counter" class="counter"></div>
+        <div id="title" class="title"></div>
+
+        <script>
+			function SetCount(number, digitCount = 4) {
+                document.getElementById("counter").innerHTML = String(number).padStart(digitCount, '0');;
+			}
+
+            function SetTitle(title = '') {
+                document.getElementById("title").innerHTML = title;
+            }
+		</script>
+    </body>
+</html>

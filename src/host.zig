@@ -1,6 +1,8 @@
 const std = @import("std");
 const webui = @import("webui");
-const html = @embedFile("index.html");
+const html = @embedFile("html/index.html");
+const font_dseg7 = @embedFile("html/DSEG7.ttf");
+const font_amiri = @embedFile("html/AmiriQuran.ttf");
 const print = std.debug.print;
 
 const SocketHandler = struct {
@@ -203,6 +205,7 @@ pub fn main() !void {
     win.setSize(100, 100);
     // win.setFrameless(true);
     win.setHighContrast(true);
+    win.setFileHandler(htmlFileHandler);
     try win.show(html);
 
     var page_controller = PageController{
@@ -224,4 +227,29 @@ pub fn main() !void {
 
     webui.wait();
     webui.clean();
+}
+
+fn htmlFileHandler(filename: []const u8) ?[]const u8 {
+    print("request filename: {s}\n", .{filename});
+    if (std.mem.eql(u8, filename, "/DSEG7.ttf")) {
+        const header =
+            "HTTP/1.1 200 OK\r\n" ++
+            "Content-Type: font/ttf\r\n" ++
+            "Content-Length: " ++
+            std.fmt.comptimePrint("{d}", .{font_dseg7.len}) ++
+            "\r\n\r\n";
+
+        return header ++ font_dseg7;
+    } else if (std.mem.eql(u8, filename, "/AmiriQuran.ttf")) {
+        const header =
+            "HTTP/1.1 200 OK\r\n" ++
+            "Content-Type: font/ttf\r\n" ++
+            "Content-Length: " ++
+            std.fmt.comptimePrint("{d}", .{font_amiri.len}) ++
+            "\r\n\r\n";
+
+        return header ++ font_amiri;
+    }
+
+    return null;
 }
