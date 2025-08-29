@@ -17,6 +17,7 @@ const SocketHandler = struct {
     fn run(self: *SocketHandler) !void {
         while (!self.stop.load(.seq_cst)) {
             const client_fd = std.posix.accept(self.socket_fd, null, null, 0) catch |err| {
+                if (self.stop.load(.seq_cst)) break;
                 print("Error accepting connection: {}\n", .{err});
                 continue;
             };
