@@ -141,42 +141,29 @@ const Config = struct {
     }
 
     fn readConfig(self: *Config) !void {
-        var buf: [1024]u8 = undefined;
-
         if (self.file) |file| {
             try file.seekTo(0);
 
+            var buf: [1024]u8 = undefined;
             const bytes_read = try file.readAll(&buf);
             const config_text = buf[0..bytes_read];
 
-            const title_start = std.mem.indexOf(u8, config_text, TITLE_LABEL) orelse return error.DecodeError;
-            const title_value_start = title_start + TITLE_LABEL.len;
-
-            const title_line_end = std.mem.indexOf(u8, config_text[title_value_start..], "\n") orelse return error.DecodeError;
-            const title_value_end = title_value_start + title_line_end;
-
-            const title_value = config_text[title_value_start..title_value_end];
-            const trimmed_title_value = std.mem.trim(u8, title_value, " \r\n\t");
-
-            if (self.title) |title| {
-                self.allocator.free(title);
-                self.title = null;
+            var it = std.mem.tokenizeScalar(u8, config_text, '\n');
+            while (it.next()) |line| {
+                if (std.mem.startsWith(u8, line, TITLE_LABEL)) {
+                    const title_value = std.mem.trim(u8, line[TITLE_LABEL.len..], " \r\t");
+                    if (self.title) |title| {
+                        self.allocator.free(title);
+                    }
+                    self.title = try self.allocator.dupe(u8, title_value);
+                } else if (std.mem.startsWith(u8, line, COUNT_LABEL)) {
+                    const count_value = std.mem.trim(u8, line[COUNT_LABEL.len..], " \r\t");
+                    self.count = try std.fmt.parseInt(u32, count_value, 10);
+                    self.count_position_in_file = @intCast(line.ptr - config_text.ptr + COUNT_LABEL.len);
+                }
             }
-
-            self.title = try self.allocator.alloc(u8, trimmed_title_value.len);
-            std.mem.copyForwards(u8, self.title.?, trimmed_title_value);
-
-            const count_start = std.mem.indexOf(u8, config_text[title_value_end..], COUNT_LABEL) orelse return error.DecodeError;
-            const count_value_start = title_value_end + count_start + COUNT_LABEL.len;
-
-            const count_line_end = std.mem.indexOf(u8, config_text[count_value_start..], "\n") orelse (config_text.len - count_value_start);
-            const count_value_end = count_value_start + count_line_end;
-
-            const count_value = config_text[count_value_start..count_value_end];
-            const trimmed_count_value = std.mem.trim(u8, count_value, " \r\n\r");
-
-            self.count = try std.fmt.parseInt(u32, trimmed_count_value, 10);
-            self.count_position_in_file = count_value_start;
+        } else {
+            return error.FileNotOpen;
         }
     }
 };
@@ -237,7 +224,6 @@ pub fn main() !void {
     };
 
     const sock_fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
-    defer std.posix.close(sock_fd);
 
     const addr = try std.net.Address.initUnix(socket_path);
     try std.posix.bind(sock_fd, &addr.any, addr.getOsSockLen());
