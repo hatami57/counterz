@@ -1,8 +1,6 @@
 const std = @import("std");
 const webui = @import("webui");
 const html = @embedFile("html/index.html");
-const font_dseg7 = @embedFile("html/DSEG7.ttf");
-const font_amiri = @embedFile("html/AmiriQuran.ttf");
 const print = std.debug.print;
 
 const TITLE_LABEL = "Title:";
@@ -48,14 +46,16 @@ const UIController = struct {
 
     fn setCount(self: *UIController, count: u32) !void {
         var buf: [64]u8 = undefined;
-        const set_count_js = try std.fmt.bufPrintZ(&buf, "SetCount({d});", .{count});
+        const set_count_js = try std.fmt.bufPrintZ(&buf, "counterStore.set({d});", .{count});
         self.window.run(set_count_js);
     }
 
     fn setTitle(self: *UIController, title: []const u8) !void {
-        var buf: [1024]u8 = undefined;
-        const set_title_js = try std.fmt.bufPrintZ(&buf, "SetTitle('{s}');", .{title});
-        self.window.run(set_title_js);
+        _ = self;
+        _ = title;
+        // var buf: [1024]u8 = undefined;
+        // const set_title_js = try std.fmt.bufPrintZ(&buf, "SetTitle('{s}');", .{title});
+        // self.window.run(set_title_js);
     }
 };
 
@@ -236,7 +236,7 @@ pub fn main() !void {
     win.setSize(100, 100);
     // win.setFrameless(true);
     win.setHighContrast(true);
-    win.setFileHandler(htmlFileHandler);
+    // win.setFileHandler(htmlFileHandler);
     try win.show(html);
 
     var ui_controller = UIController{
@@ -265,27 +265,27 @@ pub fn main() !void {
     thread.join();
 }
 
-fn htmlFileHandler(filename: []const u8) ?[]const u8 {
-    print("request filename: {s}\n", .{filename});
-    if (std.mem.eql(u8, filename, "/DSEG7.ttf")) {
-        const header =
-            "HTTP/1.1 200 OK\r\n" ++
-            "Content-Type: font/ttf\r\n" ++
-            "Content-Length: " ++
-            std.fmt.comptimePrint("{d}", .{font_dseg7.len}) ++
-            "\r\n\r\n";
-
-        return header ++ font_dseg7;
-    } else if (std.mem.eql(u8, filename, "/AmiriQuran.ttf")) {
-        const header =
-            "HTTP/1.1 200 OK\r\n" ++
-            "Content-Type: font/ttf\r\n" ++
-            "Content-Length: " ++
-            std.fmt.comptimePrint("{d}", .{font_amiri.len}) ++
-            "\r\n\r\n";
-
-        return header ++ font_amiri;
-    }
-
-    return null;
-}
+// fn htmlFileHandler(filename: []const u8) ?[]const u8 {
+//     print("request filename: {s}\n", .{filename});
+//     if (std.mem.eql(u8, filename, "/DSEG7.ttf")) {
+//         const header =
+//             "HTTP/1.1 200 OK\r\n" ++
+//             "Content-Type: font/ttf\r\n" ++
+//             "Content-Length: " ++
+//             std.fmt.comptimePrint("{d}", .{font_dseg7.len}) ++
+//             "\r\n\r\n";
+//
+//         return header ++ font_dseg7;
+//     } else if (std.mem.eql(u8, filename, "/AmiriQuran.ttf")) {
+//         const header =
+//             "HTTP/1.1 200 OK\r\n" ++
+//             "Content-Type: font/ttf\r\n" ++
+//             "Content-Length: " ++
+//             std.fmt.comptimePrint("{d}", .{font_amiri.len}) ++
+//             "\r\n\r\n";
+//
+//         return header ++ font_amiri;
+//     }
+//
+//     return null;
+// }
