@@ -48,6 +48,22 @@ pub fn build(b: *std.Build) void {
         .root_module = host_exe_mod,
     });
 
+    const vite_build = b.addSystemCommand(&[_][]const u8{
+        "sh",
+        "-c",
+        "command -v bun >/dev/null 2>&1 && bun vite build || echo 'bun not found, skipping vite build'",
+    });
+    vite_build.cwd = b.path("src/html/counterz-ui");
+    const copy_index_html = b.addSystemCommand(&[_][]const u8{
+        "sh",
+        "-c",
+        "test -f dist/index.html && cp dist/index.html ../index.html || echo 'no index.html to copy'",
+    });
+    copy_index_html.cwd = b.path("src/html/counterz-ui");
+    copy_index_html.step.dependOn(&vite_build.step);
+
+    host_exe.step.dependOn(&copy_index_html.step);
+
     b.installArtifact(host_exe);
 
     const client_exe = b.addExecutable(.{
