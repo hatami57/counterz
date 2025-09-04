@@ -44,7 +44,7 @@ function App() {
                     {value}
                 </Badge>
 
-                <Badge variant="outline" className="text-sm" style={{ fontFamily: 'DSEG7' }}>
+                <Badge variant="outline" className="text-xs" style={{ fontFamily: 'DSEG7' }}>
                     {formatTime(elapsedSeconds)}
                 </Badge>
             </div>
